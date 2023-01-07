@@ -2,6 +2,9 @@
 #### Macos ####
 ###############
 
+# Ignore content of the data directory
+data/*
+
 # General
 .DS_Store
 .AppleDouble
