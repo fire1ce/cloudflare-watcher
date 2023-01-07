@@ -1,8 +1,21 @@
 import CloudFlare
+import smtplib
+import logging
+import logging.config
+import yaml
 from deepdiff import DeepDiff
 from time import sleep
 from os import environ
 
+# Create logger and load logger config file
+logger = logging.getLogger("root")
+try:
+    with open("src/logging.yml", "r") as stream:
+        config = yaml.load(stream, Loader=yaml.FullLoader)
+    logging.config.dictConfig(config)
+except FileNotFoundError as error:
+    print("Error: " + str(error))
+    exit(1)
 
 ### Schedule ###
 
