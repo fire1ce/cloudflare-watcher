@@ -9,12 +9,14 @@ handlers:
     formatter: simple
     stream: ext://sys.stdout
   file:
-    class: logging.FileHandler
+    class: logging.handlers.TimedRotatingFileHandler
     level: DEBUG
     formatter: simple
     filename: data/logging.log
+    when: D
+    interval: 1
+    backupCount: 7
     encoding: utf-8
-    mode: a # a() = append, w() = write
 root:
   level: DEBUG
   handlers: [console, file]
