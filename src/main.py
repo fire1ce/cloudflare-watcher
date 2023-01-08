@@ -128,7 +128,9 @@ def print_compare_diff(records_diff, cf_records_archive_dict, cf_dns_records_dic
             logger.info("New records were added:")
             for record in records_diff["dictionary_item_added"]:
                 key = record.split("['")[1].split("']")[0]
-                logger.info(f"{key} : {cf_dns_records_dict[key]['content']} ({cf_dns_records_dict[key]['type']})")
+                logger.info(
+                    key + " : " + cf_records_archive_dict[key]["content"] + " -> " + cf_dns_records_dict[key]["type"]
+                )
 
         if "values_changed" in records_diff:
             logger.info("Records were updated:")
