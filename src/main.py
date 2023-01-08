@@ -7,6 +7,7 @@ from deepdiff import DeepDiff
 from time import sleep
 from os import environ
 
+
 # Create logger and load logger config file
 logger = logging.getLogger("root")
 try:
@@ -27,10 +28,25 @@ except FileNotFoundError as error:
 # logger.error("error message")
 # logger.critical("critical message")
 
+# Get variables from data/config.yaml file
+try:
+    with open("data/config.yaml", "r") as stream:
+        config = yaml.load(stream, Loader=yaml.FullLoader)
+    # create dict from domains in config.yaml
+    run_every_x_min = config["run-every-x-min"]
+    cf_domains = config["domains"]
+    # print(cf_domains)
+    # print each domain in config.yaml
+    for domain in cf_domains:
+        print(domain["domain-name"])
+
+except FileNotFoundError as error:
+    print("Error: " + str(error))
+    exit(1)
+
 
 ### Schedule ###
 
-run_every_x_min = int(environ["RUN_EVERY"])
 sleep_for_x_sec = 60 * run_every_x_min
 
 ### CloudFlare params ###
@@ -91,16 +107,27 @@ def get_cf_domain_zone_id():
     return zone_id, success
 
 
+# for each domain in config.yaml get Cf records and create a global dict with all the records
+# def get_all_cf_records():
+#     cf_records = {}
+#     for domain in cf_domains:
+#         zone_id = get_cf_domain_zone_id(domain)
+#         cf_records[domain] = get_cf_records(zone_id)
+#     return cf_records
+
+
 # Get cloudflare dns records from cloudflare api
 def get_cf_records(zone_id):
     success = False
-    try:
-        cf_dns_records = cf.zones.dns_records.get(zone_id, params={"per_page": 5000})
-        success = True
-    except CloudFlare.exceptions.CloudFlareAPIError as error:
-        logger.error("Cloudflare api call failed: " + str(error))
-    logger.info("Fetched Cloudflare's DNS records successfully for domain: " + cf_domain)
-    # return a dict of the cloudflare dns records
+    cf_dns_records = {}
+    for domain in cf_domains:
+        try:
+            cf_dns_records[domain] = cf.zones.dns_records.get(zone_id, params={"per_page": 5000})
+            success = True
+        except CloudFlare.exceptions.CloudFlareAPIError as error:
+            logger.error("Cloudflare api call failed: " + str(error))
+        logger.info("Fetched Cloudflare's DNS records successfully for domain: " + cf_domain)
+        # return a dict of the cloudflare dns records
     return cf_dns_records, success
 
 
@@ -129,7 +156,12 @@ def print_compare_diff(records_diff, cf_records_archive_dict, cf_dns_records_dic
             for record in records_diff["dictionary_item_added"]:
                 key = record.split("['")[1].split("']")[0]
                 logger.info(
-                    key + " : " + cf_records_archive_dict[key]["content"] + " -> " + cf_dns_records_dict[key]["type"]
+                    cf_dns_records_dict[key]["type"]
+                    + " Record: "
+                    + key
+                    + ":"
+                    + cf_dns_records_dict[key]["content"]
+                    + " was added"
                 )
 
         if "values_changed" in records_diff:
@@ -154,22 +186,22 @@ def print_compare_diff(records_diff, cf_records_archive_dict, cf_dns_records_dic
 def main():
     logger.info("====== Starting Cloudflare DNS records monitor =====")
     zone_id = ""
-    while True:
-        cf_records_archive_dict = get_referenc_data_from_file(zone_id)
-        if zone_id == "":
-            zone_id, success = get_cf_domain_zone_id()
-        if not success:
-            continue
-        cf_dns_records, success = get_cf_records(zone_id)
-        if not success:
-            continue
-        cf_dns_records_dict = cf_records_dict(cf_dns_records)
-        records_diff = compare_diff(cf_records_archive_dict, cf_dns_records_dict)
-        print_compare_diff(records_diff, cf_records_archive_dict, cf_dns_records_dict)
+    # while True:
+    #     cf_records_archive_dict = get_referenc_data_from_file(zone_id)
+    #     if zone_id == "":
+    #         zone_id, success = get_cf_domain_zone_id()
+    #     if not success:
+    #         continue
+    #     cf_dns_records, success = get_cf_records(zone_id)
+    #     if not success:
+    #         continue
+    #     cf_dns_records_dict = cf_records_dict(cf_dns_records)
+    #     records_diff = compare_diff(cf_records_archive_dict, cf_dns_records_dict)
+    #     print_compare_diff(records_diff, cf_records_archive_dict, cf_dns_records_dict)
 
-        logger.info("Sleeping for " + str(run_every_x_min) + " minutes")
-        logger.info("----------------------------------------------------")
-        sleep(sleep_for_x_sec)
+    #     logger.info("Sleeping for " + str(run_every_x_min) + " minutes")
+    #     logger.info("----------------------------------------------------")
+    #     sleep(sleep_for_x_sec)
 
 
 if __name__ == "__main__":
