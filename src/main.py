@@ -5,7 +5,6 @@ import yaml
 import validators
 from deepdiff import DeepDiff
 from time import sleep
-from os import environ
 
 
 # Create logger and load logger config file
@@ -49,6 +48,23 @@ def get_cf_domain_zone_id(cf_domain):
     return zone_id, success
 
 
+# Check if api key is valid without zone id
+def check_cf_api_key(cf_domain, cf_api_key):
+    success = False
+    cf = CloudFlare.CloudFlare(token=str(cf_api_key))
+    try:
+        zones = cf.zones.get(params={"name": cf_domain, "per_page": 10})
+        if len(zones) > 0:
+            success = True
+    except CloudFlare.exceptions.CloudFlareAPIError as error:
+        logger.error("Cloudflare api call failed: " + str(error) + " for domain: " + cf_domain)
+        exit(1)
+    except Exception as error:
+        logger.error("Cloudflare api call failed: " + str(error) + " for domain: " + cf_domain)
+        exit(1)
+    return success
+
+
 # Get variables from data/config.yaml file
 try:
     with open("data/config.yaml", "r") as stream:
@@ -60,13 +76,16 @@ try:
         logger.error("No domains found in config file data/config.yaml. Please add at least one domain")
         exit(1)
     for domain in cf_domains:
-        # check if domain-name is valid and not empty
-        if not validators.domain(domain["domain-name"]):
-            logger.error("Domain name is not valid: " + domain["domain-name"])
+        # check if domain-name exists and is not empty and is valid
+        if "domain-name" not in domain or domain["domain-name"] == "" or not validators.domain(domain["domain-name"]):
+            logger.error("Domain name not found or is not valid: " + domain["domain-name"])
             exit(1)
-        # check if zone-api-key is not empty
-        if domain["zone-api-key"] == "":
-            logger.error("Zone api key is empty for domain: " + domain["domain-name"])
+        # check if zone-api-key is not empty and exists
+        if "zone-api-key" not in domain or domain["zone-api-key"] == "":
+            logger.error("Zone api key not found for domain: " + domain["domain-name"])
+            exit(1)
+        # check if zone-api-key is valid
+        if not check_cf_api_key(domain["domain-name"], domain["zone-api-key"]):
             exit(1)
         # check if zone-id key exists and is not empty
         if "zone-id" not in domain or domain["zone-id"] == "":
