@@ -6,9 +6,9 @@ import validators
 from deepdiff import DeepDiff
 from time import sleep
 
-
 # Create logger and load logger config file
 logger = logging.getLogger("root")
+# logger = logging.getLogger(__name__)
 try:
     with open("src/logging.yml", "r") as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
