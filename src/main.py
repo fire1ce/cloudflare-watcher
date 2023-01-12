@@ -1,21 +1,13 @@
 import CloudFlare
-import logging
-import logging.config
 import yaml
 import validators
 from deepdiff import DeepDiff
 from time import sleep
+from logger import createLogger
+import json
 
 # Create logger and load logger config file
-logger = logging.getLogger("root")
-# logger = logging.getLogger(__name__)
-try:
-    with open("src/logging.yml", "r") as stream:
-        config = yaml.load(stream, Loader=yaml.FullLoader)
-    logging.config.dictConfig(config)
-except FileNotFoundError as error:
-    print("Error: " + str(error))
-    exit(1)
+logger = createLogger()
 
 ##################
 ### logger Use ###
@@ -119,13 +111,17 @@ def get_referenc_data_from_file():
     try:
         with open("data/records_reference.json", "r") as file:
             records_reference = file.read()
+
             # Check if file contains dictionary and its not empty
             try:
-                if records_reference != "{}":
-                    records_reference = eval(records_reference)
-                    return records_reference
+                records_reference = json.loads(records_reference)
+
+                if records_reference == {}:
+                    raise SyntaxError
+
+                return records_reference
             except SyntaxError:
-                logger.warning("Reference data corapted, recreating it")
+                logger.warning("Reference data corrupted, recreating it")
     # If file does not exist or empty, create it and return dict as records_reference param
     except FileNotFoundError:
         logger.warning("Reference data does not exist or empty, creating it")

@@ -2,7 +2,7 @@ import smtplib
 import validators
 import sys
 
-sys.path.append("../../src/")
+# sys.path.append("../../src/")
 
 # import "logger" from "src/main.py"
 from cloudflare_watcher import logger
