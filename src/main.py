@@ -16,11 +16,11 @@ def cf_api_call(token, endpoint, params=None):
         result = cf.zones.get(params=params)
     except CloudFlare.exceptions.CloudFlareAPIError as error:
         logger.error("Cloudflare api call failed: " + str(error))
-        return None
+        return None, error
     except Exception as error:
         logger.error("Cloudflare api call failed: " + str(error))
-        return None
-    return result
+        return None, error
+    return result, None
 
 
 def get_cf_domains_zone_ids(cf_domains):
