@@ -12,6 +12,7 @@ import json
 
 # Create logger and load logger config file
 logger = createLogger()
+records_reference_file_path = "data/records_reference.json"
 
 
 def cf_api_call(token, endpoint, params=None):
@@ -47,7 +48,6 @@ def get_cf_domains_zone_ids(cf_domains):
 # Check if api key is valid without zone id
 def check_cf_api_key(cf_domain, cf_api_key):
     success = False
-    # cf = CloudFlare.CloudFlare(token=str(cf_api_key))
     try:
         zones = cf_api_call(cf_api_key, "zones", {"name": cf_domain, "per_page": 10})
         if len(zones) > 0:
@@ -62,9 +62,9 @@ def check_cf_api_key(cf_domain, cf_api_key):
 
 
 # Check if file "records_reference" in data folder exists
-def get_referenc_data():
+def get_referenc_data_from_file(cf_domains_zone_ids):
     try:
-        with open("data/records_reference.json", "r") as file:
+        with open(records_reference_file_path, "r") as file:
             records_reference = file.read()
             # Check if file contains dictionary and its not empty
             try:
@@ -77,17 +77,13 @@ def get_referenc_data():
     # If file does not exist or empty, create it and return dict as records_reference param
     except FileNotFoundError:
         logger.warning("Reference data does not exist or empty")
-        records_reference = create_reference_data()
+        records_reference = get_reference_data(cf_domains_zone_ids)
         return records_reference
 
 
-def create_reference_data(cf_domains_zone_ids):
+def get_reference_data(cf_domains_zone_ids):
     logger.info("====== Creating reference data ======")
-    with open("data/records_reference.json", "w") as file:
-        cf_dns_records = get_cf_records(cf_domains_zone_ids)
-        records_reference = cf_records_dict(cf_dns_records)
-        json.dump(records_reference, file, indent=2)
-        logger.info("Reference data created successfully")
+    records_reference = get_cf_records(cf_domains_zone_ids)
     return records_reference
 
 
@@ -148,7 +144,8 @@ def get_cf_records(cf_domains_zone_ids):
             # success = True
         except CloudFlare.exceptions.CloudFlareAPIError as error:
             logger.error("Cloudflare api call failed: " + str(error) + " for domain: " + cf_domain)
-    return cf_dns_records
+    cf_dns_records_dict = cf_records_dict(cf_dns_records)
+    return cf_dns_records_dict
 
 
 # Create a dictionary of the cloudflare A records
@@ -224,29 +221,31 @@ def print_compare_diff(records_diff, records_reference, cf_dns_records_dict):
                     + " was deleted"
                 )
 
-        # update the file with the new records
-        with open("data/records_reference.json", "w") as file:
-            file.write(str(cf_dns_records_dict))
+
+def update_records_reference_file(records_reference):
+    with open(records_reference_file_path, "w") as file:
+        json.dump(records_reference, file, indent=2)
 
 
 ### Main function ###
 def main():
     cf_domains_zone_ids = get_cf_domains_zone_ids(cf_domains)
     if persist:
-        records_reference = get_referenc_data()
+        records_reference = get_referenc_data_from_file(cf_domains_zone_ids)
     else:
-        records_reference = create_reference_data(cf_domains_zone_ids)
+        records_reference = get_reference_data(cf_domains_zone_ids)
     logger.info("====== Starting Cloudflare DNS records monitor =====")
 
     while True:
-        cf_dns_records = get_cf_records(cf_domains_zone_ids)
-        cf_dns_records_dict = cf_records_dict(cf_dns_records)
+        cf_dns_records_dict = get_cf_records(cf_domains_zone_ids)
         records_diff = compare_diff(records_reference, cf_dns_records_dict)
         print_compare_diff(records_diff, records_reference, cf_dns_records_dict)
         logger.info("Sleeping for " + str(run_every_x_min) + " minutes")
         logger.info("----------------------------------------------------")
+        records_reference = cf_dns_records_dict
+        if persist:
+            update_records_reference_file(records_reference)
         sleep(sleep_for_x_sec)
-        records_reference = get_referenc_data()
 
 
 if __name__ == "__main__":
