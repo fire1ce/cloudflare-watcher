@@ -10,7 +10,7 @@ def createLogger(name="root"):
 
 # logger = logging.getLogger(__name__)
 try:
-    with open("src/logging.yml", "r") as stream:
+    with open("logging.yml", "r") as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
     logging.config.dictConfig(config)
 except FileNotFoundError as error:
