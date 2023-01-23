@@ -19,25 +19,47 @@ logger = createLogger()
 # logger.error("error message")
 # logger.critical("critical message")
 
+# Get zone ids from domain name
 
-def get_cf_domain_zone_id(cf_domain):
-    success = False
-    # Query for the zone name and expect only one value back
-    try:
-        zones = cf.zones.get(params={"name": cf_domain, "per_page": 10})
-    except CloudFlare.exceptions.CloudFlareAPIError as error:
-        logger.error("Cloudflare api call failed: " + str(error))
-    except Exception as error:
-        logger.error("Cloudflare api call failed: " + str(error))
-    if len(zones) == 0:
-        logger.error("No zones found for domain: " + cf_domain)
-    # Extract the zone_id which is needed to process that zone
-    try:
-        zone_id = zones[0]["id"]
-        success = True
-    except Exception as error:
-        logger.error("Could not get zone id: " + str(error))
-    return zone_id, success
+
+def get_cf_domains_zone_ids(cf_domains):
+    cf_domains_zone_ids = {}
+    for domain in cf_domains:
+        cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
+        # Query for the zone name and expect only one value back
+        try:
+            zones = cf.zones.get(params={"name": domain["domain-name"], "per_page": 10})
+        except CloudFlare.exceptions.CloudFlareAPIError as error:
+            logger.error("Cloudflare api call failed: " + str(error))
+        except Exception as error:
+            logger.error("Cloudflare api call failed: " + str(error))
+        if len(zones) == 0:
+            logger.error("No zones found for domain: " + domain["domain-name"])
+        # Extract the zone_id which is needed to process that zone
+        try:
+            zone_id = zones[0]["id"]
+            cf_domains_zone_ids[domain["domain-name"]] = zone_id
+        except Exception as error:
+            logger.error("Could not get zone id: " + str(error))
+    return cf_domains_zone_ids
+    # success = False
+    # cf = CloudFlare.CloudFlare(token=str(cf_api_key))
+    # # Query for the zone name and expect only one value back
+    # try:
+    #     zones = cf.zones.get(params={"name": cf_domain, "per_page": 10})
+    # except CloudFlare.exceptions.CloudFlareAPIError as error:
+    #     logger.error("Cloudflare api call failed: " + str(error))
+    # except Exception as error:
+    #     logger.error("Cloudflare api call failed: " + str(error))
+    # if len(zones) == 0:
+    #     logger.error("No zones found for domain: " + cf_domain)
+    # # Extract the zone_id which is needed to process that zone
+    # try:
+    #     zone_id = zones[0]["id"]
+    #     success = True
+    # except Exception as error:
+    #     logger.error("Could not get zone id: " + str(error))
+    # return zone_id, success
 
 
 # Check if api key is valid without zone id
@@ -57,13 +79,55 @@ def check_cf_api_key(cf_domain, cf_api_key):
     return success
 
 
-# Get variables from data/config.yaml file
+# Check if file "records_reference" in data folder exists
+def get_referenc_data():
+    try:
+        with open("data/records_reference.json", "r") as file:
+            records_reference = file.read()
+            # Check if file contains dictionary and its not empty
+            try:
+                records_reference = json.loads(records_reference)
+                if records_reference == {}:
+                    raise SyntaxError
+                return records_reference
+            except SyntaxError:
+                logger.warning("Reference data corrupted, recreating it")
+    # If file does not exist or empty, create it and return dict as records_reference param
+    except FileNotFoundError:
+        logger.warning("Reference data does not exist or empty")
+        records_reference = create_reference_data()
+        return records_reference
+
+
+def create_reference_data(cf_domains_zone_ids):
+    logger.info("====== Creating reference data ======")
+    with open("data/records_reference.json", "w") as file:
+        cf_dns_records = get_cf_records(cf_domains_zone_ids)
+        records_reference = cf_records_dict(cf_dns_records)
+        file.write(json.dumps(records_reference, indent=2))
+        logger.info("Reference data created successfully")
+    return records_reference
+
+
+# Validate config file and load it
 try:
     with open("data/config.yaml", "r") as stream:
         config = yaml.load(stream, Loader=yaml.FullLoader)
+    # Check if config file contains all required params
+    if "run-every-x-min" not in config or "domains" not in config:
+        logger.error("Config file data/config.yaml does not contain all required params")
+        exit(1)
     run_every_x_min = config["run-every-x-min"]
-    cf_domains = config["domains"]
+    if not isinstance(run_every_x_min, int):
+        logger.error("Config file data/config.yaml param run-every-x-min is not integer")
+        exit(1)
+    # check if persist is present and is boolean value if not print error and exit
+    if "persist" not in config or not isinstance(config["persist"], bool):
+        logger.error("Config file data/config.yaml param persist is not boolean")
+        exit(1)
+    persist = config["persist"]
     # check if cf_domains contains at least one domain
+    cf_domains = config["domains"]
     if len(cf_domains) == 0:
         logger.error("No domains found in config file data/config.yaml. Please add at least one domain")
         exit(1)
@@ -78,68 +142,24 @@ try:
             exit(1)
         # check if zone-api-key is valid
         if not check_cf_api_key(domain["domain-name"], domain["zone-api-key"]):
+            logger.error("Zone api key is not valid for domain: " + domain["domain-name"])
             exit(1)
-        # check if zone-id key exists and is not empty
-        if "zone-id" not in domain or domain["zone-id"] == "":
-            logger.info(
-                "Zone id not found for domain: " + domain["domain-name"] + ". Trying to get it from cloudflare api"
-            )
-            cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
-            cf_domain = str(domain["domain-name"])
-            zone_id, success = get_cf_domain_zone_id(cf_domain)
-            if success:
-                domain["zone-id"] = zone_id
-                # save the zone-id in the config file for future use and avoid api calls to cloudflare
-                with open("data/config.yaml", "w") as file:
-                    yaml.dump(config, file)
-                logger.info(
-                    "Zone id found for domain: " + domain["domain-name"] + ": " + zone_id + " and saved in config file"
-                )
-            else:
-                logger.error("Could not get zone id for domain: " + domain["domain-name"] + ". check your api key")
-                exit(1)
 except FileNotFoundError as error:
     logger.error("Error: " + str(error))
     exit(1)
 
-
 ### Schedule ###
 sleep_for_x_sec = 60 * run_every_x_min
 
-# Check if file "records_reference" in data folder exists
-def get_referenc_data_from_file():
-    try:
-        with open("data/records_reference.json", "r") as file:
-            records_reference = file.read()
-
-            # Check if file contains dictionary and its not empty
-            try:
-                records_reference = json.loads(records_reference)
-
-                if records_reference == {}:
-                    raise SyntaxError
-
-                return records_reference
-            except SyntaxError:
-                logger.warning("Reference data corrupted, recreating it")
-    # If file does not exist or empty, create it and return dict as records_reference param
-    except FileNotFoundError:
-        logger.warning("Reference data does not exist or empty, creating it")
-        with open("data/records_reference.json", "w") as file:
-            cf_dns_records = get_cf_records()
-            records_reference = cf_records_dict(cf_dns_records)
-            file.write(str(records_reference))
-        return records_reference
-
 
 # Get cloudflare dns records from cloudflare api
-def get_cf_records():
+def get_cf_records(cf_domains_zone_ids):
     # success = False
     cf_dns_records = {}
     for domain in cf_domains:
         cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
         cf_domain = str(domain["domain-name"])
-        zone_id = domain["zone-id"]
+        zone_id = cf_domains_zone_ids[cf_domain]
         try:
             cf_dns_records.update({cf_domain: cf.zones.dns_records.get(zone_id, params={"per_page": 5000})})
             logger.info("Fetched Cloudflare's DNS records successfully for domain: " + cf_domain)
@@ -229,18 +249,43 @@ def print_compare_diff(records_diff, records_reference, cf_dns_records_dict):
 
 ### Main function ###
 def main():
+    cf_domains_zone_ids = get_cf_domains_zone_ids(cf_domains)
+    if persist:
+        records_reference = get_referenc_data()
+    else:
+        records_reference = create_reference_data(cf_domains_zone_ids)
     logger.info("====== Starting Cloudflare DNS records monitor =====")
 
     while True:
-        records_reference = get_referenc_data_from_file()
-        cf_dns_records = get_cf_records()
+        cf_dns_records = get_cf_records(cf_domains_zone_ids)
         cf_dns_records_dict = cf_records_dict(cf_dns_records)
         records_diff = compare_diff(records_reference, cf_dns_records_dict)
         print_compare_diff(records_diff, records_reference, cf_dns_records_dict)
         logger.info("Sleeping for " + str(run_every_x_min) + " minutes")
         logger.info("----------------------------------------------------")
         sleep(sleep_for_x_sec)
+        records_reference = get_referenc_data()
 
 
 if __name__ == "__main__":
     main()
+
+    # # check if zone-id key exists and is not empty
+    # if "zone-id" not in domain or domain["zone-id"] == "":
+    #     logger.info(
+    #         "Zone id not found for domain: " + domain["domain-name"] + ". Trying to get it from cloudflare api"
+    #     )
+    #     cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
+    #     cf_domain = str(domain["domain-name"])
+    #     zone_id, success = get_cf_domain_zone_id(cf_domain)
+    #     if success:
+    #         domain["zone-id"] = zone_id
+    #         # save the zone-id in the config file for future use and avoid api calls to cloudflare
+    #         with open("data/config.yaml", "w") as file:
+    #             yaml.dump(config, file)
+    #         logger.info(
+    #             "Zone id found for domain: " + domain["domain-name"] + ": " + zone_id + " and saved in config file"
+    #         )
+    #     else:
+    #         logger.error("Could not get zone id for domain: " + domain["domain-name"] + ". check your api key")
+    #         exit(1)
