@@ -9,57 +9,27 @@ import json
 # Create logger and load logger config file
 logger = createLogger()
 
-##################
-### logger Use ###
-##################
-
-# logger.debug("debug message")
-# logger.info("info message")
-# logger.warning("warn message")
-# logger.error("error message")
-# logger.critical("critical message")
-
-# Get zone ids from domain name
-
-
+# Get zone ids for all domains
 def get_cf_domains_zone_ids(cf_domains):
     cf_domains_zone_ids = {}
     for domain in cf_domains:
         cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
         # Query for the zone name and expect only one value back
         try:
-            zones = cf.zones.get(params={"name": domain["domain-name"], "per_page": 10})
+            zones = cf.zones.get(params={"name": domain["name"], "per_page": 10})
         except CloudFlare.exceptions.CloudFlareAPIError as error:
             logger.error("Cloudflare api call failed: " + str(error))
         except Exception as error:
             logger.error("Cloudflare api call failed: " + str(error))
         if len(zones) == 0:
-            logger.error("No zones found for domain: " + domain["domain-name"])
+            logger.error("No zones found for domain: " + domain["name"])
         # Extract the zone_id which is needed to process that zone
         try:
             zone_id = zones[0]["id"]
-            cf_domains_zone_ids[domain["domain-name"]] = zone_id
+            cf_domains_zone_ids[domain["name"]] = zone_id
         except Exception as error:
             logger.error("Could not get zone id: " + str(error))
     return cf_domains_zone_ids
-    # success = False
-    # cf = CloudFlare.CloudFlare(token=str(cf_api_key))
-    # # Query for the zone name and expect only one value back
-    # try:
-    #     zones = cf.zones.get(params={"name": cf_domain, "per_page": 10})
-    # except CloudFlare.exceptions.CloudFlareAPIError as error:
-    #     logger.error("Cloudflare api call failed: " + str(error))
-    # except Exception as error:
-    #     logger.error("Cloudflare api call failed: " + str(error))
-    # if len(zones) == 0:
-    #     logger.error("No zones found for domain: " + cf_domain)
-    # # Extract the zone_id which is needed to process that zone
-    # try:
-    #     zone_id = zones[0]["id"]
-    #     success = True
-    # except Exception as error:
-    #     logger.error("Could not get zone id: " + str(error))
-    # return zone_id, success
 
 
 # Check if api key is valid without zone id
@@ -132,17 +102,17 @@ try:
         logger.error("No domains found in config file data/config.yaml. Please add at least one domain")
         exit(1)
     for domain in cf_domains:
-        # check if domain-name exists and is not empty and is valid
-        if "domain-name" not in domain or domain["domain-name"] == "" or not validators.domain(domain["domain-name"]):
-            logger.error("Domain name not found or is not valid: " + domain["domain-name"])
+        # check if name exists and is not empty and is valid
+        if "name" not in domain or domain["name"] == "" or not validators.domain(domain["name"]):
+            logger.error("Domain name not found or is not valid: " + domain["name"])
             exit(1)
         # check if zone-api-key is not empty and exists
         if "zone-api-key" not in domain or domain["zone-api-key"] == "":
-            logger.error("Zone api key not found for domain: " + domain["domain-name"])
+            logger.error("Zone api key not found for domain: " + domain["name"])
             exit(1)
         # check if zone-api-key is valid
-        if not check_cf_api_key(domain["domain-name"], domain["zone-api-key"]):
-            logger.error("Zone api key is not valid for domain: " + domain["domain-name"])
+        if not check_cf_api_key(domain["name"], domain["zone-api-key"]):
+            logger.error("Zone api key is not valid for domain: " + domain["name"])
             exit(1)
 except FileNotFoundError as error:
     logger.error("Error: " + str(error))
@@ -158,7 +128,7 @@ def get_cf_records(cf_domains_zone_ids):
     cf_dns_records = {}
     for domain in cf_domains:
         cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
-        cf_domain = str(domain["domain-name"])
+        cf_domain = str(domain["name"])
         zone_id = cf_domains_zone_ids[cf_domain]
         try:
             cf_dns_records.update({cf_domain: cf.zones.dns_records.get(zone_id, params={"per_page": 5000})})
@@ -269,23 +239,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    # # check if zone-id key exists and is not empty
-    # if "zone-id" not in domain or domain["zone-id"] == "":
-    #     logger.info(
-    #         "Zone id not found for domain: " + domain["domain-name"] + ". Trying to get it from cloudflare api"
-    #     )
-    #     cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
-    #     cf_domain = str(domain["domain-name"])
-    #     zone_id, success = get_cf_domain_zone_id(cf_domain)
-    #     if success:
-    #         domain["zone-id"] = zone_id
-    #         # save the zone-id in the config file for future use and avoid api calls to cloudflare
-    #         with open("data/config.yaml", "w") as file:
-    #             yaml.dump(config, file)
-    #         logger.info(
-    #             "Zone id found for domain: " + domain["domain-name"] + ": " + zone_id + " and saved in config file"
-    #         )
-    #     else:
-    #         logger.error("Could not get zone id for domain: " + domain["domain-name"] + ". check your api key")
-    #         exit(1)
