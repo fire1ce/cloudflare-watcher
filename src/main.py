@@ -1,3 +1,7 @@
+############################
+#### Cloudflare Watcher ####
+############################
+
 import CloudFlare
 import yaml
 import validators
@@ -43,9 +47,9 @@ def get_cf_domains_zone_ids(cf_domains):
 # Check if api key is valid without zone id
 def check_cf_api_key(cf_domain, cf_api_key):
     success = False
-    cf = CloudFlare.CloudFlare(token=str(cf_api_key))
+    # cf = CloudFlare.CloudFlare(token=str(cf_api_key))
     try:
-        zones = cf.zones.get(params={"name": cf_domain, "per_page": 10})
+        zones = cf_api_call(cf_api_key, "zones", {"name": cf_domain, "per_page": 10})
         if len(zones) > 0:
             success = True
     except CloudFlare.exceptions.CloudFlareAPIError as error:
