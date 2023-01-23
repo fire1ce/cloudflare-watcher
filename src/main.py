@@ -9,26 +9,34 @@ import json
 # Create logger and load logger config file
 logger = createLogger()
 
-# Get zone ids for all domains
+
+def cf_api_call(token, endpoint, params=None):
+    try:
+        cf = CloudFlare.CloudFlare(token=str(token))
+        result = cf.zones.get(params=params)
+    except CloudFlare.exceptions.CloudFlareAPIError as error:
+        logger.error("Cloudflare api call failed: " + str(error))
+        return None
+    except Exception as error:
+        logger.error("Cloudflare api call failed: " + str(error))
+        return None
+    return result
+
+
 def get_cf_domains_zone_ids(cf_domains):
     cf_domains_zone_ids = {}
     for domain in cf_domains:
-        cf = CloudFlare.CloudFlare(token=str(domain["zone-api-key"]))
-        # Query for the zone name and expect only one value back
         try:
-            zones = cf.zones.get(params={"name": domain["name"], "per_page": 10})
-        except CloudFlare.exceptions.CloudFlareAPIError as error:
-            logger.error("Cloudflare api call failed: " + str(error))
+            zones = cf_api_call(domain["zone-api-key"], "zones", {"name": domain["name"], "per_page": 10})
+            if zones is None or len(zones) == 0:
+                raise ValueError("No zones found for domain: " + domain["name"])
+            # Use list comprehension to extract the zone ids
+            zone_ids = [zone["id"] for zone in zones]
+            cf_domains_zone_ids[domain["name"]] = zone_ids[0]
+        except ValueError as error:
+            logger.error(str(error))
         except Exception as error:
-            logger.error("Cloudflare api call failed: " + str(error))
-        if len(zones) == 0:
-            logger.error("No zones found for domain: " + domain["name"])
-        # Extract the zone_id which is needed to process that zone
-        try:
-            zone_id = zones[0]["id"]
-            cf_domains_zone_ids[domain["name"]] = zone_id
-        except Exception as error:
-            logger.error("Could not get zone id: " + str(error))
+            logger.error("Unexpected error: " + str(error))
     return cf_domains_zone_ids
 
 
@@ -74,7 +82,7 @@ def create_reference_data(cf_domains_zone_ids):
     with open("data/records_reference.json", "w") as file:
         cf_dns_records = get_cf_records(cf_domains_zone_ids)
         records_reference = cf_records_dict(cf_dns_records)
-        file.write(json.dumps(records_reference, indent=2))
+        json.dump(records_reference, file, indent=2)
         logger.info("Reference data created successfully")
     return records_reference
 
@@ -82,7 +90,7 @@ def create_reference_data(cf_domains_zone_ids):
 # Validate config file and load it
 try:
     with open("data/config.yaml", "r") as stream:
-        config = yaml.load(stream, Loader=yaml.FullLoader)
+        config = yaml.safe_load(stream or {})
     # Check if config file contains all required params
     if "run-every-x-min" not in config or "domains" not in config:
         logger.error("Config file data/config.yaml does not contain all required params")
