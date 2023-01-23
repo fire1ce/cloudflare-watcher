@@ -10,9 +10,12 @@ from time import sleep
 from logger import createLogger
 import json
 
+# Global variables
+records_reference_file_path = "data/records_reference.json"
+
+
 # Create logger and load logger config file
 logger = createLogger()
-records_reference_file_path = "data/records_reference.json"
 
 
 def cf_api_call(token, endpoint, params=None):
@@ -61,29 +64,51 @@ def check_cf_api_key(cf_domain, cf_api_key):
     return success
 
 
-# Check if file "records_reference" in data folder exists
-def get_referenc_data_from_file(cf_domains_zone_ids):
+def handle_reference_data_file(records_reference, action):
     try:
-        with open(records_reference_file_path, "r") as file:
-            records_reference = file.read()
-            # Check if file contains dictionary and its not empty
-            try:
+        if action == "read":
+            with open(records_reference_file_path, "r") as file:
+                records_reference = file.read()
                 records_reference = json.loads(records_reference)
-                if records_reference == {}:
-                    raise SyntaxError
                 return records_reference
-            except SyntaxError:
-                logger.warning("Reference data corrupted, recreating it")
-    # If file does not exist or empty, create it and return dict as records_reference param
+        elif action == "write":
+            with open(records_reference_file_path, "w") as file:
+                try:
+                    json.dump(records_reference, file, indent=2)
+                except TypeError as error:
+                    logger.error("An error occurred while encoding the reference data JSON: " + str(error))
+                    return None
+        else:
+            raise ValueError("Invalid action provided, must be either 'read' or 'write'.")
     except FileNotFoundError:
         logger.warning("Reference data does not exist or empty")
+    except json.JSONDecodeError as error:
+        logger.error("An error occurred while decoding the reference data JSON: " + str(error))
+        return None
+    except Exception as error:
+        logger.error(
+            "An unexpected error occurred while trying to handle file "
+            + records_reference_file_path
+            + ": "
+            + str(error)
+        )
+        return None
+
+
+# Check if file "records_reference" in data folder exists
+def get_referenc_data_from_file(cf_domains_zone_ids):
+    records_reference = handle_reference_data_file(None, "read")
+    if records_reference is None:
+        logger.warning("Reference data corrupted, recreating it")
         records_reference = get_reference_data(cf_domains_zone_ids)
-        return records_reference
+        handle_reference_data_file(records_reference, "write")
+    return records_reference
 
 
 def get_reference_data(cf_domains_zone_ids):
-    logger.info("====== Creating reference data ======")
+    logger.info("=> Creating reference data")
     records_reference = get_cf_records(cf_domains_zone_ids)
+    logger.info("=> Reference data created successfully")
     return records_reference
 
 
@@ -244,7 +269,7 @@ def main():
         logger.info("----------------------------------------------------")
         records_reference = cf_dns_records_dict
         if persist:
-            update_records_reference_file(records_reference)
+            handle_reference_data_file(records_reference, "write")
         sleep(sleep_for_x_sec)
 
 
